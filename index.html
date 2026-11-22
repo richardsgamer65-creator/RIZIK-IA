@@ -3,47 +3,70 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#10111a">
 <title>RIZIK AI</title>
 
 <style>
 *{box-sizing:border-box}
 body{
- margin:0;background:#10111a;color:white;
- font-family:Arial,sans-serif;
+ margin:0;
+ background:#10111a;
+ color:white;
+ font-family:Arial,sans-serif
 }
 header{
- padding:20px;background:#191b29;
- border-bottom:1px solid #303247;
+ padding:20px;
+ background:#191b29;
+ border-bottom:1px solid #303247
 }
 h2{margin:0;color:#a99bff}
 #status{color:#9b9bad;font-size:12px}
 #chat{
  height:calc(100dvh - 155px);
- overflow:auto;padding:16px;
+ overflow:auto;
+ padding:16px
 }
 .msg{
- padding:13px;margin:10px 0;
- border-radius:14px;max-width:88%;
- line-height:1.5;white-space:pre-wrap;
+ padding:13px;
+ margin:10px 0;
+ border-radius:14px;
+ max-width:88%;
+ line-height:1.5;
+ white-space:pre-wrap;
+ overflow-wrap:anywhere
 }
 .bot{background:#222538}
-.user{background:#5141a0;margin-left:auto}
+.user{
+ background:#5141a0;
+ margin-left:auto
+}
 footer{
- position:fixed;bottom:0;width:100%;
- display:flex;gap:8px;padding:12px;
+ position:fixed;
+ bottom:0;
+ width:100%;
+ display:flex;
+ gap:8px;
+ padding:12px;
  background:#191b29;
+ padding-bottom:max(12px,env(safe-area-inset-bottom))
 }
 input{
- flex:1;min-width:0;padding:14px;
- border:1px solid #44465d;border-radius:12px;
- background:#10111a;color:white;
+ flex:1;
+ min-width:0;
+ padding:14px;
+ border:1px solid #44465d;
+ border-radius:12px;
+ background:#10111a;
+ color:white
 }
 button{
- padding:12px 17px;border:0;
- border-radius:12px;background:#7864ed;
- color:white;font-weight:bold;
+ padding:12px 17px;
+ border:0;
+ border-radius:12px;
+ background:#7864ed;
+ color:white;
+ font-weight:bold
 }
 </style>
 </head>
@@ -58,53 +81,173 @@ button{
 <main id="chat"></main>
 
 <footer>
-<input id="entrada" placeholder="Converse comigo...">
+<input id="entrada" placeholder="Converse ou pesquise..." autocomplete="off">
 <button id="enviar">Enviar</button>
 </footer>
 
 <script type="module">
 import { RizikBrain } from "./brain.js";
 
-const chat=document.getElementById("chat");
-const entrada=document.getElementById("entrada");
-const status=document.getElementById("status");
+const chat = document.getElementById("chat");
+const entrada = document.getElementById("entrada");
+const status = document.getElementById("status");
 
-function falar(texto,tipo="bot"){
- const div=document.createElement("div");
- div.className="msg "+tipo;
- div.textContent=texto;
+function falar(texto, tipo = "bot") {
+ const div = document.createElement("div");
+ div.className = "msg " + tipo;
+ div.textContent = texto;
  chat.appendChild(div);
- chat.scrollTop=chat.scrollHeight;
+ chat.scrollTop = chat.scrollHeight;
 }
 
-function enviar(){
- const texto=entrada.value.trim();
- if(!texto)return;
+function extrairPesquisa(texto) {
+ const padrao = /^(?:pesquise|pesquisar|pesquisa|procure|buscar|busque|busca)(?:\s+(?:na internet|na web|sobre|por))?\s*[:,-]?\s*/i;
 
- falar(texto,"user");
- entrada.value="";
+ if (!padrao.test(texto)) return null;
 
- const resultado=RizikBrain.think(texto);
+ return texto.replace(padrao, "").trim();
+}
 
- if(resultado.handled){
+async function pesquisarInternet(consulta) {
+ if (!consulta) {
+  falar("Escreva o assunto que deseja pesquisar. Exemplo: pesquise sobre inteligência artificial");
+  return;
+ }
+
+ status.textContent = "Pesquisando na Wikipédia...";
+
+ falar("Vou pesquisar na internet sobre: " + consulta);
+
+ try {
+  const parametros = new URLSearchParams({
+   action: "query",
+   list: "search",
+   srsearch: consulta,
+   srlimit: "3",
+   format: "json",
+   origin: "*"
+  });
+
+  const resposta = await fetch(
+   "https://pt.wikipedia.org/w/api.php?" +
+   parametros.toString()
+  );
+
+  if (!resposta.ok) {
+   throw new Error("Erro na pesquisa.");
+  }
+
+  const dados = await resposta.json();
+  const resultados = dados?.query?.search || [];
+
+  if (!resultados.length) {
+   falar("Não encontrei resultados na Wikipédia em português. Tente outras palavras.");
+   return;
+  }
+
+  const titulos = resultados.map(item => item.title);
+
+  const detalhes = new URLSearchParams({
+   action: "query",
+   prop: "extracts",
+   exintro: "1",
+   explaintext: "1",
+   exchars: "850",
+   titles: titulos.join("|"),
+   format: "json",
+   origin: "*"
+  });
+
+  const respostaDetalhes = await fetch(
+   "https://pt.wikipedia.org/w/api.php?" +
+   detalhes.toString()
+  );
+
+  if (!respostaDetalhes.ok) {
+   throw new Error("Não consegui abrir os artigos.");
+  }
+
+  const dadosDetalhes = await respostaDetalhes.json();
+
+  const paginas = Object.values(
+   dadosDetalhes?.query?.pages || {}
+  );
+
+  const validas = paginas.filter(p => p.extract);
+
+  if (!validas.length) {
+   falar("Não consegui obter os resumos dos artigos.");
+   return;
+  }
+
+  falar("Encontrei estas informações (fonte: Wikipédia):");
+
+  for (const pagina of validas) {
+   const url = "https://pt.wikipedia.org/wiki/" +
+    encodeURIComponent(pagina.title.replace(/ /g, "_"));
+
+   falar(
+    pagina.title + "\n" +
+    pagina.extract.slice(0, 850) +
+    "\nFonte: " + url
+   );
+  }
+
+  falar("Estes são resumos da Wikipédia, não respostas geradas por um modelo de IA. Confira as fontes antes de usar informações importantes.");
+
+ } catch (erro) {
+  console.error(erro);
+
+  falar(
+   "Não consegui acessar a pesquisa agora. Verifique sua internet e tente novamente."
+  );
+
+ } finally {
+  status.textContent =
+   "Cérebro 0.2 conectado • Pesquisa online disponível";
+ }
+}
+
+async function enviar() {
+ const texto = entrada.value.trim();
+
+ if (!texto) return;
+
+ falar(texto, "user");
+ entrada.value = "";
+
+ const consulta = extrairPesquisa(texto);
+
+ if (consulta !== null) {
+  await pesquisarInternet(consulta);
+  return;
+ }
+
+ const resultado = RizikBrain.think(texto);
+
+ if (resultado.handled) {
   falar(resultado.text);
- }else{
-  falar("Ainda estou aprendendo. Ensine-me usando: ensine: pergunta => resposta");
+ } else {
+  falar(
+   "Ainda estou aprendendo. Você pode me ensinar usando: ensine: pergunta => resposta\n\nPara pesquisar, digite: pesquise sobre [assunto]"
+  );
  }
 }
 
 document.getElementById("enviar")
-.addEventListener("click",enviar);
+ .addEventListener("click", enviar);
 
-entrada.addEventListener("keydown",e=>{
- if(e.key==="Enter")enviar();
+entrada.addEventListener("keydown", e => {
+ if (e.key === "Enter") enviar();
 });
 
-status.textContent="Cérebro próprio 0.1 conectado";
+status.textContent =
+ "Cérebro 0.2 conectado • Pesquisa online disponível";
 
-falar("Olá! Sou a RIZIK AI. Meu primeiro cérebro está funcionando! Vamos evoluir juntos.");
+falar(
+ "Olá! Sou a RIZIK AI. Meu cérebro foi atualizado! Agora posso guardar exemplos e pesquisar artigos da Wikipédia. Digite: pesquise sobre inteligência artificial"
+);
 </script>
 
 </body>
 </html>
-
