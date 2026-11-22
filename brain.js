@@ -1,9 +1,7 @@
 
-
 /*
- RIZIK AI - CEREBRO 0.1
- Núcleo experimental independente.
- Sem modelos externos e sem APIs de IA.
+ RIZIK AI - CEREBRO 0.2
+ Memoria e aprendizado com reconhecimento flexível.
 */
 
 const STORAGE_KEY = "rizik_brain_v1";
@@ -12,26 +10,23 @@ const DEFAULT_DATA = {
   name: "RIZIK AI",
   facts: {},
   examples: [],
-  version: 1
+  version: 2
 };
 
 function loadData() {
   try {
-    const saved = JSON.parse(
-      localStorage.getItem(STORAGE_KEY)
-    );
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
 
     if (saved && typeof saved === "object") {
       return {
         ...DEFAULT_DATA,
         ...saved,
         facts: saved.facts || {},
-        examples: Array.isArray(saved.examples)
-          ? saved.examples : []
+        examples: Array.isArray(saved.examples) ? saved.examples : []
       };
     }
   } catch (error) {
-    console.warn("Memória do cérebro indisponível", error);
+    console.warn("Erro ao carregar memória", error);
   }
 
   return structuredClone(DEFAULT_DATA);
@@ -41,13 +36,10 @@ let data = loadData();
 
 function saveData() {
   try {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify(data)
-    );
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     return true;
   } catch (error) {
-    console.warn("Não foi possível salvar a memória", error);
+    console.warn("Erro ao salvar memória", error);
     return false;
   }
 }
@@ -62,13 +54,15 @@ function normalize(text) {
     .trim();
 }
 
+function compact(text) {
+  return normalize(text).replace(/\s/g, "");
+}
+
 function learn(question, answer) {
   const q = String(question || "").trim();
   const a = String(answer || "").trim();
 
-  if (!q || !a) {
-    return false;
-  }
+  if (!q || !a) return false;
 
   const key = normalize(q);
 
@@ -104,27 +98,63 @@ function recall(key) {
 function classify(text) {
   const t = normalize(text);
 
-  if (/^(oi|ola|bom dia|boa tarde|boa noite)\b/.test(t)) {
+  if (/^(oi|ola|bom dia|boa tarde|boa noite)\b/.test(t))
     return "greeting";
-  }
 
-  if (t.includes("quem e voce") || t.includes("seu nome")) {
+  if (t.includes("quem e voce") || t.includes("seu nome"))
     return "identity";
-  }
 
-  if (t.includes("que horas") || t.includes("hora agora")) {
+  if (t.includes("que horas") || t.includes("hora agora"))
     return "time";
-  }
 
-  if (t.includes("que dia") || t.includes("data de hoje")) {
+  if (t.includes("que dia") || t.includes("data de hoje"))
     return "date";
-  }
 
-  if (t.includes("meu nome")) {
+  if (t.includes("meu nome"))
     return "name";
-  }
 
   return "unknown";
+}
+
+function findExample(text) {
+  const exact = data.examples.find(
+    item => normalize(item.question) === text
+  );
+
+  if (exact) return exact;
+
+  const noSpaces = data.examples.find(
+    item => compact(item.question) === compact(text)
+  );
+
+  if (noSpaces) return noSpaces;
+
+  const words = text.split(" ").filter(word => word.length > 2);
+
+  if (words.length < 2) return null;
+
+  let best = null;
+  let bestScore = 0;
+
+  for (const item of data.examples) {
+    const candidateWords = normalize(item.question)
+      .split(" ")
+      .filter(word => word.length > 2);
+
+    const matches = words.filter(
+      word => candidateWords.includes(word)
+    ).length;
+
+    const score = matches /
+      Math.max(words.length, candidateWords.length, 1);
+
+    if (score > bestScore) {
+      best = item;
+      bestScore = score;
+    }
+  }
+
+  return bestScore >= 0.65 ? best : null;
 }
 
 function think(message) {
@@ -139,8 +169,6 @@ function think(message) {
     };
   }
 
-  // Comando de ensino:
-  // ensine: pergunta => resposta
   const teaching = original.match(
     /^ensine\s*:\s*(.+?)\s*=>\s*(.+)$/i
   );
@@ -155,10 +183,7 @@ function think(message) {
     };
   }
 
-  // Procura exemplos ensinados.
-  const example = data.examples.find(
-    item => normalize(item.question) === text
-  );
+  const example = findExample(text);
 
   if (example) {
     return {
@@ -182,7 +207,7 @@ function think(message) {
       return {
         handled: true,
         intent,
-        text: "Sou a RIZIK AI, um projeto de inteligência artificial próprio em desenvolvimento."
+        text: "Sou a RIZIK AI, uma inteligência artificial própria em desenvolvimento."
       };
 
     case "time":
@@ -238,7 +263,7 @@ function think(message) {
 }
 
 export const RizikBrain = {
-  version: "0.1.0",
+  version: "0.2.0",
   think,
   learn,
   remember,
@@ -253,4 +278,3 @@ export const RizikBrain = {
     };
   }
 };
-
